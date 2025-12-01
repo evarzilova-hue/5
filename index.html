@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Социален Компас - Начална страница</title>
+    <!-- Зареждане на Tailwind CSS за модерен и изчистен вид -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0fdf4; /* Light Green */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+    </style>
+</head>
+<body>
+    <div class="max-w-md mx-auto bg-white p-6 md:p-10 rounded-xl shadow-2xl border-t-8 border-green-500 w-full">
+        
+        <h1 class="text-3xl md:text-4xl font-extrabold text-gray-800 text-center mb-2">
+            Социален Компас
+        </h1>
+        <p class="text-lg text-green-600 text-center mb-6 border-b pb-4">
+            Проект: Етика, STEM и Дигитален Баланс
+        </p>
+
+        <!-- Секция за Отворен Код -->
+        <div class="bg-indigo-50 p-4 rounded-lg mb-6 border-l-4 border-indigo-500">
+            <h2 class="text-xl font-semibold text-indigo-700 mb-1 flex items-center">
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+                Open Source
+            </h2>
+            <p class="text-sm text-gray-700">
+                Този проект е с отворен код. Кликнете по-долу, за да стартирате приложението.
+            </p>
+        </div>
+
+        <!-- Основен бутон за навигация -->
+        <a href="social_compass.html" class="block w-full text-center py-4 bg-green-600 hover:bg-green-700 text-white font-bold text-lg rounded-xl shadow-lg transition duration-150 active:scale-95">
+            СТАРТИРАЙ ПРИЛОЖЕНИЕТО
+        </a>
+        
+        <!-- Допълнителни инструкции -->
+        <p class="text-xs text-gray-400 text-center mt-4">
+            (Файлът social_compass.html съдържа цялата логика)
+        </p>
+    </div>
+</body>
+</html>
