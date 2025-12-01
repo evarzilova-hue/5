@@ -60,9 +60,18 @@
         </h2>
         
         <div class="text-center mb-6">
+            <!-- Дисплей на текущия таймер (до 50 минути) -->
             <div id="timer-display" class="text-6xl font-mono font-black text-gray-800 bg-gray-100 p-4 rounded-lg shadow-inner">00:00</div>
-            <p class="text-xs text-gray-500 mt-1">Праг на Аларма: 50 минути</p>
+            <p class="text-xs text-gray-500 mt-1">Текуща Сесия (Праг на Аларма: 50 минути)</p>
         </div>
+
+        <!-- **НОВО: Общо Време на Екрана** -->
+        <div class="text-center mb-6 p-3 bg-gray-50 rounded-lg border border-gray-200">
+            <h3 class="text-sm font-bold text-gray-600 mb-1">Общо Време (Сесия)</h3>
+            <div id="total-time-display" class="text-3xl font-mono font-bold text-gray-700">00:00</div>
+            <p class="text-xs text-gray-500 mt-1">Кумулативно отчитане на времето пред екрана</p>
+        </div>
+
 
         <!-- Хормонален Баланс -->
         <div class="mb-6 p-4 border rounded-lg bg-yellow-50 border-yellow-200">
@@ -141,7 +150,7 @@
             </div>
             
             <button onclick="closeCrisisPanel()" class="w-full mt-6 py-3 bg-gray-400 hover:bg-gray-500 text-white font-bold rounded-xl transition duration-150 active:scale-95">
-                ЗАТВОРИ
+                Продължи към ФВС Мисия
             </button>
         </div>
     </div>
@@ -161,9 +170,15 @@
         ],
         // Секция II: STEM и Социално проучване
         ALARM_THRESHOLD_MINUTES: 50, // Праг на "Крузо аларм" (минути)
-        CORTISOL_CORRECTION: -15,   // Корекция на кортизол (отрицателно число)
-        ENDORPHIN_CORRECTION: +20,  // Корекция на ендорфини (положително число)
-        CORTISOL_TICK_INCREASE: 5,  // Увеличение на кортизол на всеки 5 минути
+        
+        // Корекции при успешно ФВС изпълнение
+        CORTISOL_CORRECTION_SUCCESS: -15, 
+        ENDORPHIN_CORRECTION_SUCCESS: +20, 
+        
+        // Натрупване на дисбаланс с времето (на всеки 5 минути)
+        CORTISOL_TICK_INCREASE: 5,  
+        ENDORPHIN_TICK_DECREASE: -3, 
+        
         // Секция III: ФВС Мисии
         MISSIONS: [
             { title: "Планински катерач", instruction: "Подпрян на лакти и пръсти, движи коленете към гърдите бързо, като катериш невидима планина, за 50 секунди. Усети мощта на всеки мускул!" },
@@ -175,7 +190,7 @@
         ETHICAL_QUESTIONS: [
             { text: "Предпочитате ли да общувате с изкуствения интелект вместо с реални хора?", id: "q1" },
             { text: "Използвате ли екрана като бягство от проблемите си или от трудна ситуация?", id: "q2" },
-            { text: "Случва ли ви се да пропускате сън, хранене или почивка, за да продължите да използвате телефона, компютъра или друг екран?", id: "q3" }
+            { text: "Случва ли се да пропускате сън, хранене или почивка, за да продължите да използвате телефона, компютъра или друг екран?", id: "q3" }
         ],
         // Допълнителни данни: Кризисни контакти
         CRISIS_CONTACTS: [
@@ -187,13 +202,15 @@
     // --- СЪСТОЯНИЕ НА ПРИЛОЖЕНИЕТО (STATE) ---
     let timerInterval = null;
     let hormoneInterval = null;
-    let secondsElapsed = 0;
+    let secondsElapsed = 0; // Време за текущата 50-минутна сесия
+    let totalTimeElapsed = 0; // **НОВО: Общо време на екрана**
     let isAlarmTriggered = false;
     let cortisolLevel = 0;
     let endorphinLevel = 0;
     
     // --- ЕЛЕМЕНТИ НА DOM ---
     const timerDisplay = document.getElementById('timer-display');
+    const totalTimeDisplay = document.getElementById('total-time-display'); // **НОВ DOM Елемент**
     const lockStatus = document.getElementById('lock-status');
     const startBtn = document.getElementById('start-btn');
     const missionBtn = document.getElementById('mission-btn');
@@ -205,9 +222,38 @@
     const endorphinDisplay = document.getElementById('endorphin-level');
     const hormoneMessage = document.getElementById('hormone-message');
     const ethicalQuestionsContainer = document.getElementById('ethical-questions');
+    
+    // Създаване на аудио контекст за звуковата аларма
+    let audioContext = null;
 
     // --- ФУНКЦИИ ЗА ПОМОЩ И UI ---
     
+    // Функцията генерира кратък, неприятен звук
+    function playAlarmSound() {
+        try {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+
+            oscillator.type = 'square';
+            oscillator.frequency.setValueAtTime(440, audioContext.currentTime);
+            
+            gainNode.gain.setValueAtTime(0.5, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 1);
+
+            oscillator.start();
+            oscillator.stop(audioContext.currentTime + 1);
+        } catch (e) {
+            console.error("Audio playback error:", e);
+        }
+    }
+
+
     // А. Хуманитарен анализ: Ротация на Мотота
     function startMottoRotation() {
         let mottoIndex = 0;
@@ -224,21 +270,32 @@
         setInterval(rotateMotto, 7000); // Сменяй мотото на всеки 7 секунди
     }
 
-    // Актуализиране на дисплея на таймера
+    // Актуализиране на дисплея на таймера и общото време
     function updateTimerDisplay() {
+        // 1. Текуща сесия (secondsElapsed)
         const totalMinutes = Math.floor(secondsElapsed / 60);
         const secs = secondsElapsed % 60;
         const formattedMinutes = String(totalMinutes).padStart(2, '0');
         const formattedSeconds = String(secs).padStart(2, '0');
         timerDisplay.textContent = `${formattedMinutes}:${formattedSeconds}`;
+        
+        // 2. **Общо време (totalTimeElapsed)**
+        const totalHours = Math.floor(totalTimeElapsed / 3600);
+        const totalMins = Math.floor((totalTimeElapsed % 3600) / 60);
+        const formattedTotalHours = String(totalHours).padStart(2, '0');
+        const formattedTotalMins = String(totalMins).padStart(2, '0');
+
+        totalTimeDisplay.textContent = `${formattedTotalHours}:${formattedTotalMins}`;
     }
 
     // Актуализиране на дисплея на хормоните
     function updateHormoneDisplay(message = null) {
         cortisolDisplay.textContent = cortisolLevel;
         endorphinDisplay.textContent = endorphinLevel;
+        
+        // Визуален индикатор за нивото
         cortisolDisplay.className = `font-bold ${cortisolLevel > 0 ? 'text-red-600' : 'text-gray-600'}`;
-        endorphinDisplay.className = `font-bold ${endorphinLevel > 0 ? 'text-green-600' : 'text-gray-600'}`;
+        endorphinDisplay.className = `font-bold ${endorphinLevel > 0 ? 'text-green-600' : (endorphinLevel < 0 ? 'text-red-400' : 'text-gray-600')}`;
 
         if (message) {
             hormoneMessage.textContent = message;
@@ -250,7 +307,7 @@
     // Генериране на Кризисни контакти в панела
     function generateCrisisContacts() {
         const html = CONFIG.CRISIS_CONTACTS.map(contact => `
-            <div class="p-3 bg-red-100 rounded-lg flex justify-between items-center">
+            <div class="p-3 bg-red-50 rounded-lg flex justify-between items-center">
                 <span class="font-semibold text-red-800">${contact.name}</span>
                 <a href="tel:${contact.contact.replace(/\s/g, '')}" class="text-lg font-bold text-red-700 hover:text-red-900 transition duration-150 underline">${contact.contact}</a>
             </div>
@@ -276,6 +333,26 @@
             </div>
         `).join('');
         ethicalQuestionsContainer.innerHTML = html;
+    }
+    
+    // Обща функция за отключване на приложението и нулиране на таймера
+    function resetAndUnlock() {
+        // Нулира само 50-минутния таймер, но запазва totalTimeElapsed
+        secondsElapsed = 0; 
+        isAlarmTriggered = false;
+        updateTimerDisplay(); // Обновява и двата таймера
+        
+        lockStatus.textContent = 'ОТКЛЮЧЕН';
+        lockStatus.classList.remove('animate-pulse');
+        
+        startBtn.disabled = false;
+        startBtn.textContent = 'СТАРТ';
+        startBtn.classList.remove('bg-gray-400');
+        startBtn.classList.add('bg-green-500', 'hover:bg-green-600');
+
+        missionBtn.disabled = true;
+        missionBtn.classList.remove('bg-indigo-500', 'hover:bg-indigo-600', 'shaking');
+        missionBtn.classList.add('bg-gray-400');
     }
 
     // --- ОСНОВНА ЛОГИКА НА ПРИЛОЖЕНИЕТО ---
@@ -305,8 +382,9 @@
             
             // Стартиране на таймера
             timerInterval = setInterval(() => {
-                secondsElapsed++;
-                updateTimerDisplay();
+                secondsElapsed++; // Текуща сесия
+                totalTimeElapsed++; // **Общо време** (НОВО)
+                updateTimerDisplay(); // Обновява и двата дисплея
                 
                 // Проверка за прага на алармата
                 if (secondsElapsed >= CONFIG.ALARM_THRESHOLD_MINUTES * 60 && !isAlarmTriggered) {
@@ -314,10 +392,15 @@
                 }
             }, 1000);
 
-            // Увеличаване на кортизола на всеки 5 минути (300 секунди)
+            // Увеличаване на кортизола и намаляване на ендорфините на всеки 5 минути
             hormoneInterval = setInterval(() => {
+                // Повишаване на стреса
                 cortisolLevel += CONFIG.CORTISOL_TICK_INCREASE;
-                updateHormoneDisplay(`Кортизол +${CONFIG.CORTISOL_TICK_INCREASE} (Дигитален стрес)`);
+                
+                // Намаляване на щастието
+                endorphinLevel += CONFIG.ENDORPHIN_TICK_DECREASE; 
+                
+                updateHormoneDisplay(`Дисбаланс: Кортизол +${CONFIG.CORTISOL_TICK_INCREASE}, Ендорфини ${CONFIG.ENDORPHIN_TICK_DECREASE}`);
             }, 5 * 60 * 1000); // 5 минути
         }
     }
@@ -343,6 +426,9 @@
         missionBtn.classList.remove('bg-gray-400');
         missionBtn.classList.add('bg-indigo-500', 'hover:bg-indigo-600');
         missionBtn.classList.add('shaking');
+        
+        // Активиране на звуковата аларма
+        playAlarmSound();
     }
 
     // В. ФВС Мисии: Отваряне на панела с мисията
@@ -366,27 +452,13 @@
 
         if (isCompleted) {
             // Успешно изпълнена мисия: Корекция на хормоните
-            cortisolLevel += CONFIG.CORTISOL_CORRECTION; // -15
-            endorphinLevel += CONFIG.ENDORPHIN_CORRECTION; // +20
+            cortisolLevel = Math.max(0, cortisolLevel + CONFIG.CORTISOL_CORRECTION_SUCCESS); 
+            endorphinLevel += CONFIG.ENDORPHIN_CORRECTION_SUCCESS; 
             
-            updateHormoneDisplay(`УСПЕХ! Кортизол ${CONFIG.CORTISOL_CORRECTION}, Ендорфини +${CONFIG.ENDORPHIN_CORRECTION}`);
+            updateHormoneDisplay(`УСПЕХ! Кортизол ${CONFIG.CORTISOL_CORRECTION_SUCCESS}, Ендорфини +${CONFIG.ENDORPHIN_CORRECTION_SUCCESS}`);
 
             // Нулиране на таймера и отключване
-            secondsElapsed = 0;
-            isAlarmTriggered = false;
-            updateTimerDisplay();
-            
-            lockStatus.textContent = 'ОТКЛЮЧЕН';
-            lockStatus.classList.remove('animate-pulse');
-            
-            startBtn.disabled = false;
-            startBtn.textContent = 'СТАРТ';
-            startBtn.classList.remove('bg-gray-400');
-            startBtn.classList.add('bg-green-500', 'hover:bg-green-600');
-
-            missionBtn.disabled = true;
-            missionBtn.classList.remove('bg-indigo-500', 'hover:bg-indigo-600');
-            missionBtn.classList.add('bg-gray-400');
+            resetAndUnlock();
 
         } else {
             // Г. Етичен филтър: Отказ от мисия - Активиране на Етичния филтър
@@ -422,21 +494,8 @@
             openCrisisContacts();
         } else {
             // Ако рискът е нисък, просто отключи, но запази хормоните
-            secondsElapsed = 0;
-            isAlarmTriggered = false;
-            updateTimerDisplay();
-            
             lockStatus.textContent = 'ОТКЛЮЧЕН (ОЦЕНЕН РИСК)';
-            lockStatus.classList.remove('animate-pulse');
-            
-            startBtn.disabled = false;
-            startBtn.textContent = 'СТАРТ';
-            startBtn.classList.remove('bg-gray-400');
-            startBtn.classList.add('bg-green-500', 'hover:bg-green-600');
-
-            missionBtn.disabled = true;
-            missionBtn.classList.remove('bg-indigo-500', 'hover:bg-indigo-600');
-            missionBtn.classList.add('bg-gray-400');
+            resetAndUnlock();
         }
     }
     
@@ -446,26 +505,24 @@
         crisisContactsPanel.classList.add('flex');
     }
     
-    // Затваряне на Кризисния панел
+    // Затваряне на Кризисния панел и връщане към ФВС Мисия
     function closeCrisisPanel() {
         crisisContactsPanel.classList.remove('flex');
         crisisContactsPanel.classList.add('hidden');
-        // Потребителят е преминал през критично насочване, приложението се отключва.
-        secondsElapsed = 0;
-        isAlarmTriggered = false;
-        updateTimerDisplay();
         
-        lockStatus.textContent = 'ОТКЛЮЧЕН (ПРЕГЛЕД НА КОНТАКТИ)';
-        lockStatus.classList.remove('animate-pulse');
+        // Принуждава потребителя да изпълни ФВС мисия след прегледа на контактите
+        lockStatus.textContent = 'ЗАКЛЮЧЕН (ИЗИСКВА ФВС)';
+        lockStatus.classList.add('animate-pulse');
         
-        startBtn.disabled = false;
-        startBtn.textContent = 'СТАРТ';
-        startBtn.classList.remove('bg-gray-400');
-        startBtn.classList.add('bg-green-500', 'hover:bg-green-600');
-
-        missionBtn.disabled = true;
-        missionBtn.classList.remove('bg-indigo-500', 'hover:bg-indigo-600');
-        missionBtn.classList.add('bg-gray-400');
+        startBtn.disabled = true;
+        startBtn.textContent = 'АЛАРМА!';
+        
+        missionBtn.disabled = false;
+        missionBtn.classList.remove('bg-gray-400');
+        missionBtn.classList.add('bg-indigo-500', 'hover:bg-indigo-600');
+        missionBtn.classList.add('shaking'); 
+        
+        updateHormoneDisplay("Изисква се ФВС мисия за възстановяване на баланса.");
     }
 
     // --- ИНИЦИАЛИЗАЦИЯ ---
@@ -473,6 +530,7 @@
         startMottoRotation();
         updateHormoneDisplay();
         generateCrisisContacts(); // Генерираме контактите веднъж при стартиране
+        updateTimerDisplay(); // Инициализира Общото време
     };
 
 </script>
